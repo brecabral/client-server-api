@@ -23,26 +23,31 @@ type USDExchange struct {
 	} `json:"USDBRL"`
 }
 
+type CotacaoResponse struct {
+	Bid string `json:"bid"`
+}
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/cotacao", cotacaoHandler)
-	log.Println("Iniciando Servidor...")
+	log.Println("[INFO] Servidor HTTP rodando em: http://localhost:8080")
 	http.ListenAndServe(":8080", mux)
 }
 
 func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("Requisição Recebida")
+	log.Printf("[INFO] %s %s - requisição recebida", r.Method, r.URL.Path)
 	cotacao, err := findUSDExchange()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		log.Printf("Erro ao consumir API: %v\n", err)
+		log.Printf("[ERROR] Erro ao consumir API: %v", err)
 		return
 	}
+	res := CotacaoResponse{cotacao.UsdBrl.Bid}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(cotacao)
-	log.Println("Requisição Respondida")
+	json.NewEncoder(w).Encode(res)
+	log.Printf("[INFO] %s %s - resposta enviada com status %d", r.Method, r.URL.Path, http.StatusOK)
 }
 
 func findUSDExchange() (*USDExchange, error) {
