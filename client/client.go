@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 type Cotacao struct {
@@ -12,7 +14,15 @@ type Cotacao struct {
 }
 
 func main() {
-	res, err := http.Get("http://localhost:8080/cotacao")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*300)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/cotacao", nil)
+	if err != nil {
+		log.Fatalf("[ERROR] Erro ao acessar servidor: %v", err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Fatalf("[ERROR] Erro ao acessar servidor: %v", err)
 	}
