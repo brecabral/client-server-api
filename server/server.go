@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type USDExchange struct {
@@ -50,12 +53,17 @@ func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res)
 	log.Printf("[INFO] %s %s - resposta enviada com status %d", r.Method, r.URL.Path, http.StatusOK)
+
+	err = saveUSDExchange(cotacao)
+	if err != nil {
+		log.Fatalf("[ERROR] Erro ao salvar cotação: %v", err)
+	}
 }
 
 func findUSDExchange() (*USDExchange, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
-	
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
 	if err != nil {
 		return nil, err
@@ -80,4 +88,67 @@ func findUSDExchange() (*USDExchange, error) {
 	}
 
 	return &exchange, nil
+}
+
+func saveUSDExchange(cotacao *USDExchange) error {
+	db, err := sql.Open("sqlite3", "./cotacoes.db")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	const createTable = `
+	CREATE TABLE IF NOT EXISTS cotacoes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT,
+		codein TEXT,
+		name TEXT,
+		high TEXT,
+		low TEXT,
+		var_bid TEXT,
+		pct_change TEXT,
+		bid TEXT,
+		ask TEXT,
+		timestamp TEXT,
+		create_date TEXT
+	);`
+	db.Exec(createTable)
+
+	const insertCotacao = `
+	INSERT INTO cotacoes(
+		code,
+		codein,
+		name,
+		high,
+		low,
+		var_bid,
+		pct_change,
+		bid,
+		ask,
+		timestamp,
+		create_date
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	stmt, err := db.Prepare(insertCotacao)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(
+		cotacao.UsdBrl.Code,
+		cotacao.UsdBrl.Codein,
+		cotacao.UsdBrl.Name,
+		cotacao.UsdBrl.High,
+		cotacao.UsdBrl.Low,
+		cotacao.UsdBrl.VarBid,
+		cotacao.UsdBrl.PctChange,
+		cotacao.UsdBrl.Bid,
+		cotacao.UsdBrl.Ask,
+		cotacao.UsdBrl.Timestamp,
+		cotacao.UsdBrl.CreateDate)
+	if err != nil {
+		return err
+	}
+	
+	return nil
 }
