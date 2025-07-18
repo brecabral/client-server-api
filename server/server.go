@@ -134,7 +134,11 @@ func saveUSDExchange(cotacao *USDExchange) error {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10)
+	defer cancel()
+	
+	_, err = stmt.ExecContext(
+		ctx,
 		cotacao.UsdBrl.Code,
 		cotacao.UsdBrl.Codein,
 		cotacao.UsdBrl.Name,
