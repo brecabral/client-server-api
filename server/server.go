@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 type USDExchange struct {
@@ -51,7 +53,16 @@ func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func findUSDExchange() (*USDExchange, error) {
-	res, err := http.Get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
+	defer cancel()
+	
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
+	if err != nil {
+		return nil, err
+	}
+	
+	client := http.Client{}
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
