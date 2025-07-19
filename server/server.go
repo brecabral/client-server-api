@@ -32,16 +32,71 @@ type CotacaoResponse struct {
 	Bid string `json:"bid"`
 }
 
-func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/cotacao", cotacaoHandler)
-	log.Println("[INFO] Servidor HTTP rodando em: http://localhost:8080")
-	http.ListenAndServe(":8080", mux)
+type Server struct {
+	db *sql.DB
+	client *http.Client
 }
 
-func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
+const createTable = `
+	CREATE TABLE IF NOT EXISTS cotacoes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT,
+		codein TEXT,
+		name TEXT,
+		high TEXT,
+		low TEXT,
+		var_bid TEXT,
+		pct_change TEXT,
+		bid TEXT,
+		ask TEXT,
+		timestamp TEXT,
+		create_date TEXT
+	);`
+
+const insertCotacao = `
+	INSERT INTO cotacoes(
+		code,
+		codein,
+		name,
+		high,
+		low,
+		var_bid,
+		pct_change,
+		bid,
+		ask,
+		timestamp,
+		create_date
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+
+const urlCotacao = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+
+func main() {
+
+	db, err := sql.Open("sqlite3", "./cotacoes.db")
+	if err != nil {
+		log.Fatalf("[ERROR] Erro ao se conectar ao banco de dados: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(createTable)
+	if err != nil {
+		log.Fatalf("[ERROR] Erro ao criar tabela no banco de dados: %v", err)
+	}
+
+	client := &http.Client{}
+	
+	server := Server{db, client}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cotacao", server.cotacaoHandler)
+	log.Println("[INFO] Servidor HTTP rodando em: http://localhost:8080")
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+func (s *Server) cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[INFO] %s %s - requisição recebida", r.Method, r.URL.Path)
-	cotacao, err := findUSDExchange()
+
+	cotacao, err := s.findCotacao()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Printf("[ERROR] Erro ao consumir API: %v", err)
@@ -54,23 +109,23 @@ func cotacaoHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 	log.Printf("[INFO] %s %s - resposta enviada com status %d", r.Method, r.URL.Path, http.StatusOK)
 
-	err = saveUSDExchange(cotacao)
+	err = s.saveCotacao(cotacao)
 	if err != nil {
-		log.Fatalf("[ERROR] Erro ao salvar cotação: %v", err)
+		log.Printf("[ERROR] Erro ao salvar cotação: %v", err)
+		return
 	}
 }
 
-func findUSDExchange() (*USDExchange, error) {
+func (s *Server) findCotacao() (*USDExchange, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://economia.awesomeapi.com.br/json/last/USD-BRL", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlCotacao, nil)
 	if err != nil {
 		return nil, err
 	}
-	
-	client := http.Client{}
-	res, err := client.Do(req)
+
+	res, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -90,45 +145,8 @@ func findUSDExchange() (*USDExchange, error) {
 	return &exchange, nil
 }
 
-func saveUSDExchange(cotacao *USDExchange) error {
-	db, err := sql.Open("sqlite3", "./cotacoes.db")
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	const createTable = `
-	CREATE TABLE IF NOT EXISTS cotacoes (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		code TEXT,
-		codein TEXT,
-		name TEXT,
-		high TEXT,
-		low TEXT,
-		var_bid TEXT,
-		pct_change TEXT,
-		bid TEXT,
-		ask TEXT,
-		timestamp TEXT,
-		create_date TEXT
-	);`
-	db.Exec(createTable)
-
-	const insertCotacao = `
-	INSERT INTO cotacoes(
-		code,
-		codein,
-		name,
-		high,
-		low,
-		var_bid,
-		pct_change,
-		bid,
-		ask,
-		timestamp,
-		create_date
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
-	stmt, err := db.Prepare(insertCotacao)
+func (s *Server) saveCotacao(cotacao *USDExchange) error {
+	stmt, err := s.db.Prepare(insertCotacao)
 	if err != nil {
 		return err
 	}
